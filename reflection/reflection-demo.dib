@@ -1,0 +1,194 @@
+#!meta
+
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"aliases":[],"languageName":"csharp","name":"csharp"}]}}
+
+#!markdown
+
+# Reflection demo in C#
+
+#!markdown
+
+## Create demo classes
+
+We create a class called "Car". Then we "instantiate" two objects from this class called "BobbyCar" and "Beetle".
+
+#!csharp
+
+public class Car
+{
+    public string Name { get; set; }
+    public bool HasEngine { get; set; }
+    
+    public void StartEngine() {
+        if (HasEngine) {
+            Console.WriteLine(Name + ": Brummmmmm");
+        }
+        else {
+            Console.WriteLine("~no engine available~");
+        }
+    }
+
+    public void GetStatistic(string statisticName) {
+        Console.WriteLine("Statisitc of {0} is: WORKS GREAT", statisticName);
+    }
+
+    private void Secret() {
+        Console.WriteLine("Secret revealed.");
+    }
+}
+
+var bobbyCar = new Car() { Name = "BobbyCar", HasEngine = false };
+var beetle = new Car() { Name = "Beetle", HasEngine = true };
+
+new [] { bobbyCar, beetle } 
+
+#!markdown
+
+## Retrieving a property from an existing object
+
+#!csharp
+
+// Getting the Type of the object bobbyCar. We could do the same via typeof(Car).
+var typeOfBobbyCar = bobbyCar.GetType();
+
+// We then search in the type for a property by its name. We pass in the name of the property as string and retrieve a reference to the property itself.
+var hasEngineProperty = typeOfBobbyCar.GetProperty("HasEngine");
+
+// hasEngineProperty in this case is only the description of the property. It is not the property of that specific object.
+// So when calling "GetValue" on hasEngineProperty, we need to pass in the object whose property-value we want to read.
+var hasEnginePropertyOfBobbyCar = hasEngineProperty.GetValue(bobbyCar);
+
+Console.WriteLine("The HasEngine property of the bobbyCar object is: " + hasEnginePropertyOfBobbyCar);
+
+#!csharp
+
+// The benefit of this way is, that we can use our "hasEngineProperty" again for the other object as well:
+var hasEnginePropertyOfBeetle = hasEngineProperty.GetValue(beetle);
+
+Console.WriteLine("The HasEngine property of the beetle object is: " + hasEnginePropertyOfBeetle);
+
+#!csharp
+
+// When having a type, but you need to be a little bit more dynamic - e.g. by looping through a list of properties and retrieving their values.
+// HINT: To demonstrate, that you do not need the object first, the type is used directly here - but you could do the same with typeOfBobbyCar
+var carType = typeof(Car);
+var allProperties = carType.GetProperties();
+
+foreach (var property in allProperties) {
+    Console.WriteLine("Property: {0} | Type: {1}", property.Name, property.PropertyType.Name);
+}
+
+allProperties
+
+#!markdown
+
+**HINT:<br>
+Instead of reading all properties, you could also do that with fields, interfaces, constructors, methods...<br>
+GetFields, GetProperties, GetInterfaces, GetConstructors, GetMethod**
+
+#!markdown
+
+## Updating values
+
+The same as with GetValue can also be done with SetValue to update values on an object.
+
+#!csharp
+
+var minivan = new Car() { Name = "Minivan", HasEngine = false };
+Console.WriteLine("[BEFORE] Minivan has engine: " + minivan.HasEngine);
+
+// So obviously we made a mistake in the above object ... at least Minivans SHOULD have a motor. So let's use reflection to update it:
+
+hasEngineProperty.SetValue(minivan, true);
+Console.WriteLine("[AFTER] Minivan has engine: " + minivan.HasEngine);
+
+#!markdown
+
+## Instantiating an object
+
+In the above code, we initialized our objects ourselves by calling "new Car()". But perhaps you do not have a reference to the library where Car is in in your code. Then running "new Car" would return something like "unknown type". But as long as the class is somewhere in our /bin (binary) folder, the class is loaded and can be used.
+
+#!csharp
+
+// To instantiate an object we need its so called "fully qualified name". This means we need to know namespace, assembly and classname.
+// Normally you have something similar to this: <namespace>.<class>, <assembly>
+
+// In a normal project, you would use: "Assembly.GetTypes" to retrieve all types and "Assembly.Name" for the assemblies name. 
+// In this notebook, we workaround this by asking our already known type:
+
+Console.WriteLine("Class fullname: " + carType.FullName);
+Console.WriteLine("Assembly fullname: " + carType.Assembly.FullName);
+
+#!csharp
+
+// We use the Activator.CreateInstance method to create a new object based on the FullNames of the assembly and the object. 
+// We could basically store this information e.g. in a database. No object is required for that.
+var instanceOfClass = Activator.CreateInstance(carType.Assembly.FullName, carType.FullName);
+
+// DOES NOT WORK: instanceOfClass.Name (because we just get an ObjectHandle returned from CreateInstance).
+
+// So we need to call "unwrap" first to get the object and then cast this to work with the properties again:
+var cabrio = (Car)instanceOfClass.Unwrap();
+cabrio.Name = "Cabrio";
+
+// Of course we could do it as well without even knowing the "Car" class above - e.g.:
+hasEngineProperty.SetValue(cabrio, true);
+
+cabrio
+
+#!markdown
+
+## Calling a method
+
+#!csharp
+
+// To call a method of an unreferenced object, we ask the type for the method, as we did with the property.
+// Then we use "Invoke" on the method-reference and hand in our object.
+var startEngineMethod = carType.GetMethod("StartEngine");
+startEngineMethod.Invoke(cabrio, null);
+
+#!csharp
+
+// But what is the second parameter of "Invoke" for? It's for the parameters.
+// So in case that your method expects parameters, you pass them in second on Invoke:
+var startEngineMethod = carType.GetMethod("GetStatistic");
+startEngineMethod.Invoke(cabrio, new[] { "Coolness" });
+
+#!csharp
+
+// That works btw. also for private methods if you specify the NonPublic and Instance BindingFlags (otherwise you get a null-reference exception).
+var secretMethod = carType.GetMethod("Secret", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+secretMethod.Invoke(cabrio, null);
+
+#!markdown
+
+## DEMO
+
+#!csharp
+
+// Asking for the current runime/environment:
+var appDomain = AppDomain.CurrentDomain;
+
+// Looking for all loaded assemblies:
+var allAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+
+Type carType;
+
+// Loop through all loaded assemblies...
+foreach (var assembly in allAssemblies) {
+    // ... and search for a given class - in our case "Car" (EndsWith is used here, as fullname is autogenerated here).
+    // THIS DOESNT WORK IN NOTEBOOKS: carType = assembly.GetTypes().FirstOrDefault(type => type.FullName.EndsWith("Car"));
+}
+
+// Faking it (no need for this line if the AppDomain stuff above would work):
+carType = typeOfBobbyCar;
+
+// Creating the object
+var car = Activator.CreateInstance(carType.Assembly.FullName, carType.FullName).Unwrap();
+
+// Setting the properties
+carType.GetProperty("Name").SetValue(car, "DemoCar");
+carType.GetProperty("HasEngine").SetValue(car, true);
+
+// Invoking the method to test
+carType.GetMethod("StartEngine").Invoke(car, null);
